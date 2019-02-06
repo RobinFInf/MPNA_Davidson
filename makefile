@@ -1,8 +1,8 @@
 
 davidson: davidson.o
-	gcc -fopenmp -o davidson.exe davidson.o -Wall -llapacke -lcblas
+	gcc -fopenmp -o davidson.exe davidson.o -Wall -llapacke
 davidson.o: davidson.c
-	gcc -fopenmp -o davidson.o -c davidson.c -Wall -llapacke -lcblas
+	gcc -fopenmp -o davidson.o -c davidson.c -Wall -llapacke
 run :
 	./davidson.exe
 run2 :

@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <lapacke.h>
-#include <cblas.h>
+
 struct vecteur {
   int size;
   double* T;
@@ -283,6 +283,13 @@ void davidson(int N)
     vecteur w[N];
     vecteur r,y;
     double theta;
+    double resVal[N];
+    double resVect[N];
+    double uH[N*N];
+    int isuppz[2*N];
+    int info;
+    int m[1];
+    m[0] = 0;
     for(j=0; j < N ; j++)
     {
       w[j]=prod_matrice_vecteur(A,v[j]);
@@ -292,11 +299,31 @@ void davidson(int N)
         H.M[j][k] = prod_scal(v[j],w[k]);
       }
       H.M[j][j] = prod_scal(v[j],w[j]);
-      //CALCUL DES EIGENVALUE ET DU VECTEUR theta et s
+
+      //CALCUL DES EIGENVALUE ET DU VECTEUR theta et s//
+
+      //H triangulaire sup dans uH//
+      for (int i = 0; i < N; i++) {
+        for (int j = 0; j < N; j++) {
+          if (j >= i) {
+            uH[i*j] = H.M[i][j];
+          }else{
+            uH[i*j] = 0.0;
+          }
+        }
+      }
+      /////////////////////////////
+      info = LAPACKE_dsyevr(LAPACK_ROW_MAJOR, 'V', 'I', 'U', N*N, uH, N, 0.0, 0.0, 1, N, -1.0, m, resVal, resVect, N, isuppz);
+      //return 0 = succes, -# wrong parameter, others error.
+      printf("dsyevr statut : %d\n", info);
+      //////////////////////////////////////////////////
+
+      /*
       tmpY = col(v[j]);
       y = prod_matrice_vecteur(tmpY, s);
       r = soustraction(prod_matrice_vecteur(A,y),scal_vect(theta,i));
       t =
+      */
       // inversion de matrice LAPACKE_dgetrf et LAPACKE_dgetri
 
     }
