@@ -270,6 +270,16 @@ vecteur soustraction(vecteur v1, vecteur v2)
   return res;
 }
 
+void print_matrix(char* desc, int m, int n, double* a, int lda){
+  int i, j;
+  printf("%s\n", desc);
+  for (i = 0; i < m; i++) {
+    for (j = 0; j < n; j++) {
+      printf("%6.2f\n", a[i+j*lda]);
+    }
+  }
+}
+
 void davidson(int N)
 {
     int j,k;
@@ -285,7 +295,13 @@ void davidson(int N)
     double theta;
     double resVal[N];
     double resVect[N];
-    double uH[N*N];
+    double uH[5*5] = {
+      0.67, -0.20, 0.19, -1.06, 0.46,
+      0.0, 3.82, -0.13, 1.06, -0.48,
+      0.0, 0.0, 3.27, 0.11, 1.10,
+      0.0, 0.0, 0.0, 5.86, -0.98,
+      0.0, 0.0, 0.0, 0.0, 3.54
+    };
     int isuppz[2*N];
     int info;
     int m[1];
@@ -303,6 +319,7 @@ void davidson(int N)
       //CALCUL DES EIGENVALUE ET DU VECTEUR theta et s//
 
       //H triangulaire sup dans uH//
+      /*
       for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {
           if (j >= i) {
@@ -311,11 +328,14 @@ void davidson(int N)
             uH[i*j] = 0.0;
           }
         }
-      }
+      }*/
       /////////////////////////////
       info = LAPACKE_dsyevr(LAPACK_ROW_MAJOR, 'V', 'I', 'U', N*N, uH, N, 0.0, 0.0, 1, N, -1.0, m, resVal, resVect, N, isuppz);
       //return 0 = succes, -# wrong parameter, others error.
       printf("dsyevr statut : %d\n", info);
+      printf("nbr Eigen value : %2i\n", m);
+      print_matrix("Eigen value", 1, N, resVal, 1);
+      print_matrix("Eigen vector", N, N, resVect, N);
       //////////////////////////////////////////////////
 
       /*
@@ -334,7 +354,7 @@ int main(int argc, char const *argv[]) {
   struct timeval tv;
   time_elapsed = 0;
   int i,N; // N la taille de la matice A(N*N)
-  N = 10;
+  N = 5;
   for (i = 0; i<10; i++)
   {
     gettimeofday(&tv, NULL);
