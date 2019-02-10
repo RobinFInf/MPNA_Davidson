@@ -130,6 +130,19 @@ vecteur scal_vect(double d, vecteur a)
   }
   return tmp;
 }
+matrice scal_mat(double d, matrice a)
+{
+  int i;
+  matrice tmp = init_matrice(a.ligne,a.colonne,0.0);
+  for (i=0;i < a.ligne; i++)
+  {
+    for(j=0;j < a.colonne ; j++)
+    {
+               tmp.M[i][j] = d*a.M[i][j];
+    }
+  }
+  return tmp;
+}
 
 double prod_scal(vecteur a, vecteur b)
 {
@@ -258,7 +271,7 @@ matrice col(vecteur v)
   }
   return M;
 }
-vecteur soustraction(vecteur v1, vecteur v2)
+vecteur sous_vect(vecteur v1, vecteur v2)
 {
   vecteur res;
   int i;
@@ -270,10 +283,24 @@ vecteur soustraction(vecteur v1, vecteur v2)
   return res;
 }
 
+matrice sous_mat(matrice a, matrice b)
+{
+  matrice M;
+  int i,j;
+  M = init_matrice(a.ligne, a.colonne, 0.0);
+  for (i=0;i < M.ligne; i++)
+  {
+    for(j=0;j < M.colonne ; j++)
+    {
+               M.M[i][j] = a.M[i][j] - b.M[i][j];
+    }
+  }
+  return M;
+}
 void davidson(int N)
 {
     int j,k;
-    matrice A, H, Da, i, tmpY;
+    matrice A, H, Da, id, tmpY, inverse;
     vecteur v[N];
     A = init_matrice(N,N,2.0);
     Da = init_matrice(N,N,2.0);
@@ -295,9 +322,10 @@ void davidson(int N)
       //CALCUL DES EIGENVALUE ET DU VECTEUR theta et s
       tmpY = col(v[j]);
       y = prod_matrice_vecteur(tmpY, s);
-      r = soustraction(prod_matrice_vecteur(A,y),scal_vect(theta,i));
-      t =
+      r = sous_vect(prod_matrice_vecteur(A,y),scal_vect(theta,i));
+      inverse = sous_mat(Da,scal_mat(theta,id));
       // inversion de matrice LAPACKE_dgetrf et LAPACKE_dgetri
+
 
     }
 }
