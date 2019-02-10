@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <lapacke.h>
+#include <math.h>
 
 struct vecteur {
   int size;
@@ -271,52 +272,6 @@ matrice col(vecteur v)
   }
   return M;
 }
-vecteur sous_vect(vecteur v1, vecteur v2)
-{
-  vecteur res;
-  int i;
-  res = init_vecteur(v1.size, 0.0);
-  for (i=0; i<v1.size; i++)
-  {
-    res.T[i] = v1.T[i] - v2.T[i];
-  }
-  return res;
-}
-
-matrice sous_mat(matrice a, matrice b)
-{
-  matrice M;
-  int i,j;
-  M = init_matrice(a.ligne, a.colonne, 0.0);
-  for (i=0;i < M.ligne; i++)
-  {
-    for(j=0;j < M.colonne ; j++)
-    {
-               M.M[i][j] = a.M[i][j] - b.M[i][j];
-    }
-  }
-  return M;
-}
-void d_v(double * d, vecteur v)
-{
-  int i;
-  for(i=0; i<v.size; i++)
-  {
-    v.T[i]=d[i];
-  }
-}
-void m_d(matrice a, double* d)
-{
-  int i,j;
-  for(i=0; i<a.ligne; i++)
-  {
-    for(j=0; j<a.ligne; j++)
-    {
-      ;
-    }
-  }
-}
-
 void print_eigenvalues( char* desc, int n, double* wr, double* wi ) {
         int j;
         printf( "\n %s\n", desc );
@@ -361,11 +316,72 @@ int max(double *tab, int n){
   return tmp;
 }
 
+vecteur sous_vect(vecteur v1, vecteur v2)
+{
+  vecteur res;
+  int i;
+  res = init_vecteur(v1.size, 0.0);
+  for (i=0; i<v1.size; i++)
+  {
+    res.T[i] = v1.T[i] - v2.T[i];
+  }
+  return res;
+}
+
+matrice sous_mat(matrice a, matrice b)
+{
+  matrice M;
+  int i,j;
+  M = init_matrice(a.ligne, a.colonne, 0.0);
+  for (i=0;i < M.ligne; i++)
+  {
+    for(j=0;j < M.colonne ; j++)
+    {
+               M.M[i][j] = a.M[i][j] - b.M[i][j];
+    }
+  }
+  return M;
+}
+void d_v(double * d, vecteur v)
+{
+  int i;
+  for(i=0; i<v.size; i++)
+  {
+    v.T[i]=d[i];
+  }
+}
+vecteur norm(vecteur v)
+{
+  vecteur res;
+  int i;
+  double tot;
+  res = init_vecteur(v.size, 0.0);
+  for(i=0; i<v.size; i++)
+  {
+    tot += v.T[i]*v.T[i];
+  }
+  tot = sqrt(tot);
+  for(i=0; i<v.size; i++)
+  {
+  res.T[i]= v.T[i]/tot;
+  }
+  return res;
+}
+
 void init_lapack(int n, double* a, matrice m)
 {
   for (int i = 0; i < n; i++) {
     for (int j = 0; j < n; j++) {
       a[i*n+j] = m.M[i][j];
+    }
+  }
+}
+
+void return_matrice(int n, double * d, matrice m)
+{
+  for (int i = 0; i < n; i++) {
+    for (int j = 0; j < n; j++) {
+     m.M[i][j] = d[i*n+j];
     }
   }
 }
@@ -380,14 +396,13 @@ void davidson(int N)
     H = init_matrice(N,N,0.0);
     v[0] = init_vecteur(N,1.0);
     vecteur w[N];
-    vecteur r,y,s;
+    vecteur r, y, s, t, tmpT;
     s = init_vecteur(N,0.0);
     double theta;
     //////////////////////////////////////////////////
     int n = N, lda = N, ldvl = N, ldvr = N, info, maximum;
     double wr[n], wi[n], vl[ldvl*n], vr[ldvr*n];
     double *a = malloc(N*N*sizeof(double));
-
     /*
     double a[5*5] = {
            -1.01,  0.86, -4.60,  3.31, -4.81,
@@ -397,7 +412,7 @@ void davidson(int N)
             7.31, -6.43, -6.16,  2.47,  5.58
     };*/
     //////////////////////////////////////////////////
-    for(j=0; j < N ; j++)
+    for(j=0; j < N/2 ; j++)
     {
       w[j]=prod_matrice_vecteur(A,v[j]);
       for(k = 0; k<j; k++)
@@ -441,7 +456,13 @@ void davidson(int N)
       }
       err = LAPACKE_dgetri(LAPACK_ROW_MAJOR,N,inverse_lapack,N,pivotArray);
       printf( "inversion faite;");
-
+      return_matrice(N, inverse_lapack, inverse);
+      t = prod_matrice_vecteur(inverse,r);
+      double uu;
+      uu = prod_scal(v[j],v[j]);
+      tmpT = scal_vect(uu,t);
+      t = sous_vect(t,tmpT);
+      v[j+1] = norm(t);
     }
 }
 
