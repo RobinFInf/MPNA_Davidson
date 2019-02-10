@@ -270,19 +270,53 @@ vecteur soustraction(vecteur v1, vecteur v2)
   return res;
 }
 
-void print_matrix(char* desc, int m, int n, double* a, int lda){
-  int i, j;
-  printf("%s\n", desc);
-  for (i = 0; i < m; i++) {
-    for (j = 0; j < n; j++) {
-      printf("%6.2f\n", a[i+j*lda]);
+void print_eigenvalues( char* desc, int n, double* wr, double* wi ) {
+        int j;
+        printf( "\n %s\n", desc );
+   for( j = 0; j < n; j++ ) {
+      if( wi[j] == (double)0.0 ) {
+         printf( " %2f", wr[j] );
+      } else {
+         printf( " (%2f,%2f)", wr[j], wi[j] );
+      }
+   }
+   printf( "\n" );
+}
+
+void print_eigenvectors( char* desc, int n, double* wi, double* v, int ldv ) {
+        int i, j;
+        printf( "\n %s\n", desc );
+   for( i = 0; i < n; i++ ) {
+      j = 0;
+      while( j < n ) {
+         if( wi[j] == (double)0.0 ) {
+            printf( " %2f", v[i*ldv+j] );
+            j++;
+         } else {
+            printf( " (%2f,%2f)", v[i*ldv+j], v[i*ldv+(j+1)] );
+            printf( " (%2f,%2f)", v[i*ldv+j], -v[i*ldv+(j+1)] );
+            j += 2;
+         }
+      }
+      printf( "\n" );
+   }
+}
+
+int max(double *tab, int n){
+  double max = -9999;
+  int tmp;
+  for (int i = 0; i < n*n; i++) {
+    if (tab[i] > max) {
+      max = tab[i];
+      tmp = i;
     }
   }
+  return tmp;
 }
 
 void davidson(int N)
 {
-    int j,k;
+    int j,k, maximum;
     matrice A, H, Da, i, tmpY;
     vecteur v[N];
     A = init_matrice(N,N,2.0);
@@ -293,19 +327,20 @@ void davidson(int N)
     vecteur w[N];
     vecteur r,y;
     double theta;
-    double resVal[N];
-    double resVect[N];
-    double uH[5*5] = {
-      0.67, -0.20, 0.19, -1.06, 0.46,
-      0.0, 3.82, -0.13, 1.06, -0.48,
-      0.0, 0.0, 3.27, 0.11, 1.10,
-      0.0, 0.0, 0.0, 5.86, -0.98,
-      0.0, 0.0, 0.0, 0.0, 3.54
-    };
-    int isuppz[2*N];
-    int info;
-    int m[1];
-    m[0] = 0;
+    //////////////////////////////////////////////////
+    int n = N, lda = N, ldvl = N, ldvr = N, info;
+    double wr[n], wi[n], vl[ldvl*n], vr[ldvr*n];
+    double *a = malloc(N*N*sizeof(double));
+
+    /*
+    double a[5*5] = {
+           -1.01,  0.86, -4.60,  3.31, -4.81,
+            3.98,  0.53, -7.04,  5.29,  3.55,
+            3.30,  8.26, -3.89,  8.20, -1.51,
+            4.43,  4.96, -7.66, -7.33,  6.18,
+            7.31, -6.43, -6.16,  2.47,  5.58
+    };*/
+    //////////////////////////////////////////////////
     for(j=0; j < N ; j++)
     {
       w[j]=prod_matrice_vecteur(A,v[j]);
@@ -315,29 +350,31 @@ void davidson(int N)
         H.M[j][k] = prod_scal(v[j],w[k]);
       }
       H.M[j][j] = prod_scal(v[j],w[j]);
-
       //CALCUL DES EIGENVALUE ET DU VECTEUR theta et s//
-
-      //H triangulaire sup dans uH//
-      /*
-      for (int i = 0; i < N; i++) {
-        for (int j = 0; j < N; j++) {
-          if (j >= i) {
-            uH[i*j] = H.M[i][j];
-          }else{
-            uH[i*j] = 0.0;
-          }
+      for (int ii = 0; ii < n; ii++) {
+        for (int jj = 0; jj < n; jj++) {
+          a[ii+jj] = H.M[ii][jj];
+          printf("%2f\n", a[ii+jj]);
         }
-      }*/
-      /////////////////////////////
-      info = LAPACKE_dsyevr(LAPACK_ROW_MAJOR, 'V', 'I', 'U', N*N, uH, N, 0.0, 0.0, 1, N, -1.0, m, resVal, resVect, N, isuppz);
-      //return 0 = succes, -# wrong parameter, others error.
-      printf("dsyevr statut : %d\n", info);
-      printf("nbr Eigen value : %2i\n", m);
-      print_matrix("Eigen value", 1, N, resVal, 1);
-      print_matrix("Eigen vector", N, N, resVect, N);
-      //////////////////////////////////////////////////
+      }
+      /* Solve eigenproblem */
+      info = LAPACKE_dgeev( LAPACK_ROW_MAJOR, 'V', 'V', n, a, lda, wr, wi,
+                          vl, ldvl, vr, ldvr );
+      /* Check for convergence */
+      if( info > 0 ) {
+              printf( "Failed to compute eigenvalues.\n" );
+              exit( 1 );
+      }
+      maximum = max(wr, n);
+      print_eigenvalues( "Eigenvalues", n, wr, wi );
+      //print_eigenvectors( "Left eigenvectors", n, wi, vl, ldvl );
+      print_eigenvectors( "Right eigenvectors", n, wi, vr, ldvr );
 
+      printf("Max EigenValue : %2f\n", wr[maximum]);
+      printf("EigenVector : %2f\n", vr[maximum]);
+      theta =  wr[maximum];
+      //s = vr;
+      //////////////////////////////////////////////////
       /*
       tmpY = col(v[j]);
       y = prod_matrice_vecteur(tmpY, s);
