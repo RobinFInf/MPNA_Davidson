@@ -317,6 +317,50 @@ void m_d(matrice a, double* d)
   }
 }
 
+void print_eigenvalues( char* desc, int n, double* wr, double* wi ) {
+        int j;
+        printf( "\n %s\n", desc );
+   for( j = 0; j < n; j++ ) {
+      if( wi[j] == (double)0.0 ) {
+         printf( " %2f", wr[j] );
+      } else {
+         printf( " (%2f,%2f)", wr[j], wi[j] );
+      }
+   }
+   printf( "\n" );
+}
+
+void print_eigenvectors( char* desc, int n, double* wi, double* v, int ldv ) {
+        int i, j;
+        printf( "\n %s\n", desc );
+   for( i = 0; i < n; i++ ) {
+      j = 0;
+      while( j < n ) {
+         if( wi[j] == (double)0.0 ) {
+            printf( " %2f", v[i*ldv+j] );
+            j++;
+         } else {
+            printf( " (%2f,%2f)", v[i*ldv+j], v[i*ldv+(j+1)] );
+            printf( " (%2f,%2f)", v[i*ldv+j], -v[i*ldv+(j+1)] );
+            j += 2;
+         }
+      }
+      printf( "\n" );
+   }
+}
+
+int max(double *tab, int n){
+  double max = -9999;
+  int tmp;
+  for (int i = 0; i < n*n; i++) {
+    if (tab[i] > max) {
+      max = tab[i];
+      tmp = i;
+    }
+  }
+  return tmp;
+}
+
 void init_lapack(int n, double* a, matrice m)
 {
   for (int i = 0; i < n; i++) {
