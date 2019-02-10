@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <lapacke.h>
-#include <cblas.h>
+
 struct vecteur {
   int size;
   double* T;
@@ -132,7 +132,7 @@ vecteur scal_vect(double d, vecteur a)
 }
 matrice scal_mat(double d, matrice a)
 {
-  int i;
+  int i,j;
   matrice tmp = init_matrice(a.ligne,a.colonne,0.0);
   for (i=0;i < a.ligne; i++)
   {
@@ -297,6 +297,34 @@ matrice sous_mat(matrice a, matrice b)
   }
   return M;
 }
+void d_v(double * d, vecteur v)
+{
+  int i;
+  for(i=0; i<v.size; i++)
+  {
+    v.T[i]=d[i];
+  }
+}
+void m_d(matrice a, double* d)
+{
+  int i,j;
+  for(i=0; i<a.ligne; i++)
+  {
+    for(j=0; j<a.ligne; j++)
+    {
+      ;
+    }
+  }
+}
+
+void init_lapack(int n, double* a, matrice m)
+{
+  for (int i = 0; i < n; i++) {
+    for (int j = 0; j < n; j++) {
+      a[i*n+j] = m.M[i][j];
+    }
+  }
+}
 void davidson(int N)
 {
     int j,k;
@@ -304,12 +332,27 @@ void davidson(int N)
     vecteur v[N];
     A = init_matrice(N,N,2.0);
     Da = init_matrice(N,N,2.0);
-    i = init_matrice_ident(N,N);
+    id = init_matrice_ident(N,N);
     H = init_matrice(N,N,0.0);
     v[0] = init_vecteur(N,1.0);
     vecteur w[N];
-    vecteur r,y;
+    vecteur r,y,s;
+    s = init_vecteur(N,0.0);
     double theta;
+    //////////////////////////////////////////////////
+    int n = N, lda = N, ldvl = N, ldvr = N, info, maximum;
+    double wr[n], wi[n], vl[ldvl*n], vr[ldvr*n];
+    double *a = malloc(N*N*sizeof(double));
+
+    /*
+    double a[5*5] = {
+           -1.01,  0.86, -4.60,  3.31, -4.81,
+            3.98,  0.53, -7.04,  5.29,  3.55,
+            3.30,  8.26, -3.89,  8.20, -1.51,
+            4.43,  4.96, -7.66, -7.33,  6.18,
+            7.31, -6.43, -6.16,  2.47,  5.58
+    };*/
+    //////////////////////////////////////////////////
     for(j=0; j < N ; j++)
     {
       w[j]=prod_matrice_vecteur(A,v[j]);
@@ -319,13 +362,41 @@ void davidson(int N)
         H.M[j][k] = prod_scal(v[j],w[k]);
       }
       H.M[j][j] = prod_scal(v[j],w[j]);
-      //CALCUL DES EIGENVALUE ET DU VECTEUR theta et s
-      tmpY = col(v[j]);
+      /* Solve eigenproblem */
+      init_lapack(N,a,A);
+      info = LAPACKE_dgeev( LAPACK_ROW_MAJOR, 'V', 'V', n, a, lda, wr, wi,
+                          vl, ldvl, vr, ldvr );
+      /* vérifie la convergence */
+      if( info > 0 ) {
+              printf( "Failed to compute eigenvalues.\n" );
+              exit( 1 );
+      }
+      maximum = max(wr, n);
+      print_eigenvalues( "Eigenvalues", n, wr, wi );
+      //print_eigenvectors( "Left eigenvectors", n, wi, vl, ldvl );
+      print_eigenvectors( "Right eigenvectors", n, wi, vr, ldvr );
+
+      printf("Max EigenValue : %2f\n", wr[maximum]);
+      printf("EigenVector : %2f\n", vr[maximum]);
+      theta =  wr[maximum]; // recupere la valeur propre max , les autres sont dans wr
+      d_v(vr,s); // Remet le vecteur dans la structure de donnée
+      tmpY = col(v[j]); // Transforme un vecteur en matrice
       y = prod_matrice_vecteur(tmpY, s);
-      r = sous_vect(prod_matrice_vecteur(A,y),scal_vect(theta,i));
+      r = sous_vect(prod_matrice_vecteur(A,y),scal_vect(theta,y));
       inverse = sous_mat(Da,scal_mat(theta,id));
       // inversion de matrice LAPACKE_dgetrf et LAPACKE_dgetri
-
+      int pivotArray[N+1];
+      lapack_int err;
+      double inverse_lapack[N*N];
+      init_lapack(N,inverse_lapack,inverse);
+      err = LAPACKE_dgetrf(LAPACK_ROW_MAJOR,N,N,inverse_lapack,N,pivotArray);
+      if (err !=0)
+      {
+        printf("erreur sur LAPACKE_dgetrf \n");
+        exit( 1 );
+      }
+      err = LAPACKE_dgetri(LAPACK_ROW_MAJOR,N,inverse_lapack,N,pivotArray);
+      printf( "inversion faite;");
 
     }
 }
@@ -335,7 +406,7 @@ int main(int argc, char const *argv[]) {
   struct timeval tv;
   time_elapsed = 0;
   int i,N; // N la taille de la matice A(N*N)
-  N = 10;
+  N = 5;
   for (i = 0; i<10; i++)
   {
     gettimeofday(&tv, NULL);
