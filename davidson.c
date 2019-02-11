@@ -42,10 +42,10 @@ matrice init_matrice(int a, int b, double val)
   int i,j;
   M.ligne = a;
   M.colonne = b;
-  M.M = malloc(b*sizeof(double*));
-  for(i=0;i < b;i++)
+  M.M = malloc(a*sizeof(double*));
+  for(i=0;i < a;i++)
   {
-    M.M[i]=malloc(a*sizeof(double));
+    M.M[i]=malloc(b*sizeof(double));
   }
   for (i=0;i < M.ligne; i++)
   {
@@ -67,10 +67,10 @@ matrice init_matrice_ident(int a, int b)
   int i,j;
   M.ligne = a;
   M.colonne = b;
-  M.M = malloc(b*sizeof(double*));
-  for(i=0;i < b;i++)
+  M.M = malloc(a*sizeof(double*));
+  for(i=0;i < a;i++)
   {
-    M.M[i]=malloc(a*sizeof(double));
+    M.M[i]=malloc(b*sizeof(double));
   }
   for (i=0;i < M.ligne; i++)
   {
@@ -256,14 +256,8 @@ matrice col(vecteur v)
 {
   matrice M;
   int i,j;
-  M.ligne = v.size;
-  M.colonne = 1;
-  M.M = malloc(sizeof(double*));
-  for(i=0; i<1; i++)
-  {
-    M.M[i]=malloc(v.size*sizeof(double));
-  }
-  for (i=0;i < M.ligne; i++)
+  M = init_matrice(v.size,1,0.0);
+  for (i=0; i< M.ligne; i++)
   {
     for(j=0;j < 1 ; j++)
     {
@@ -438,10 +432,15 @@ void davidson(int N)
       printf("Max EigenValue : %2f\n", wr[maximum]);
       printf("EigenVector : %2f\n", vr[maximum]);
       theta =  wr[maximum]; // recupere la valeur propre max , les autres sont dans wr
+      printf("1 \n");
       d_v(vr,s); // Remet le vecteur dans la structure de donnée
+      printf("11 \n");
       tmpY = col(v[j]); // Transforme un vecteur en matrice
+      printf("111 \n");
       y = prod_matrice_vecteur(tmpY, s);
+      printf("1111 \n");
       r = sous_vect(prod_matrice_vecteur(A,y),scal_vect(theta,y));
+      printf("1111 \n");
       inverse = sous_mat(Da,scal_mat(theta,id));
       // inversion de matrice LAPACKE_dgetrf et LAPACKE_dgetri
       int pivotArray[N+1];
@@ -449,13 +448,13 @@ void davidson(int N)
       double inverse_lapack[N*N];
       init_lapack(N,inverse_lapack,inverse);
       err = LAPACKE_dgetrf(LAPACK_ROW_MAJOR,N,N,inverse_lapack,N,pivotArray);
-      if (err !=0)
+      if (err !=0 )
       {
-        printf("erreur sur LAPACKE_dgetrf \n");
-        exit( 1 );
+        printf("erreur sur LAPACKE_dgetrf err=%d \n",err);
+        //exit( 1 );
       }
       err = LAPACKE_dgetri(LAPACK_ROW_MAJOR,N,inverse_lapack,N,pivotArray);
-      printf( "inversion faite;");
+      printf( "inversion faite \n");
       return_matrice(N, inverse_lapack, inverse);
       t = prod_matrice_vecteur(inverse,r);
       double uu;
