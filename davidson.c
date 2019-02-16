@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <lapacke.h>
 #include <math.h>
+#include <mpi.h>
 
 struct vecteur {
   int size;
@@ -122,6 +123,7 @@ matrice init_matrice_ident(int a, int b)
   }
   return M;
 }
+
 vecteur prod_matrice_vecteur(matrice m, vecteur v)
 {
   vecteur res;
@@ -246,6 +248,7 @@ double prod_scal_par_mat_mat(matrice a, matrice m, int rangi, int rangj)
     }
     return res;
 }
+
 vecteur prod_matrice_vecteur_par(matrice m, vecteur v )
 {
   vecteur res;
@@ -435,6 +438,49 @@ void print_vecteur(vecteur v)
   }
   printf("\n");
 }
+
+int pmap(int i, int size, matrice m){
+  size = size-1;
+  int r = (int)ceil((double)m.ligne / (double)size);
+  int proc = i/r;
+  return proc+1;
+}
+
+vecteur prod_matrice_vecteur_MPI(matrice m, vecteur v)
+{
+  int size, rank;
+  MPI_Status stat;
+  MPI_Comm_size(MPI_COMM_WORLD, &size);
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  vecteur res;
+  res = init_vecteur(v.size, 0.0);
+
+  if (rank == 0) {
+    for (int i = 0; i < m.ligne; i++) {
+      int proc = pmap(i, size, m);
+      MPI_Send(m.M[i], m.colonne, MPI_DOUBLE, proc, (100*(i+1)), MPI_COMM_WORLD);
+    }
+    for (int i = 0; i < m.ligne; i++) {
+      int sender_proc = pmap(i, size, m);
+      MPI_Recv(&res.T[i], m.colonne, MPI_DOUBLE, sender_proc, i, MPI_COMM_WORLD, &stat);
+    }
+  }else{
+    for (int i = 0; i < m.ligne; i++) {
+      int proc = pmap(i, size, m);
+      if (rank == proc) {
+        double b[m.colonne];
+        MPI_Recv(b, m.colonne, MPI_DOUBLE, 0, (100*(i+1)), MPI_COMM_WORLD, &stat);
+        double sum = 0.0;
+        for (int j = 0; j < m.colonne; j++) {
+          sum = sum + (b[j] * v.T[j]);
+        }
+        MPI_Send(&sum, 1, MPI_DOUBLE, 0, i, MPI_COMM_WORLD);
+      }
+    }
+  }
+  return res;
+}
+
 void davidson(int N, double wr[N], double vr[N*N], int nb_eig)
 {
     int j,k;
