@@ -9,7 +9,8 @@
 #include <stdint.h>
 #include <lapacke.h>
 #include <math.h>
-#include <mpi.h>
+//#include <mpi.h>
+#define P  0.000001
 
 struct vecteur {
   int size;
@@ -79,21 +80,10 @@ matrice init_matrice_test(int a, int b)
     {
 	     if (i == j)
        {
-               M.M[i][j] = i+1;
+               M.M[i][j] = i%10;
        }else{
                M.M[i][j] = 0;
        }
-    }
-  }
-  for(i=0; i<M.ligne; i++)
-  {
-    if( i != M.ligne -1)
-    {
-      M.M[i][i+1] = -0.1;
-    }
-    if(i != 0)
-    {
-      M.M[i][i-1] = 0.1;
     }
   }
   return M;
@@ -438,8 +428,14 @@ void print_vecteur(vecteur v)
   }
   printf("\n");
 }
-
-int pmap(int i, int size, matrice m){
+void re_init(double * v, int N)
+{
+  for (int i=0 ; i<N; i++)
+  {
+    v[i] = 0.0;
+  }
+}
+/*int pmap(int i, int size, matrice m){
   size = size-1;
   int r = (int)ceil((double)m.ligne / (double)size);
   int proc = i/r;
@@ -480,13 +476,12 @@ vecteur prod_matrice_vecteur_MPI(matrice m, vecteur v)
   }
   return res;
 }
-
-void davidson(int N, double wr[N], double vr[N*N], int nb_eig)
+*/
+void davidson(matrice A,int N, double wr[N], double vr[N*N], int nb_eig)
 {
     int j,k;
-    matrice A, H, Da, id, tmpY, inverse;
+    matrice  H, Da, id, tmpY, inverse;
     vecteur v[N];
-    A = init_matrice_test(N,N);
     Da = init_matrice(N,N,2.0);
     id = init_matrice_ident(N,N);
     H = init_matrice(N,N,0.0);
@@ -494,29 +489,30 @@ void davidson(int N, double wr[N], double vr[N*N], int nb_eig)
     vecteur w[N];
     vecteur r, y, s, t, tmpT;
     s = init_vecteur(N,0.0);
-    double theta;
-    //////////////////////////////////////////////////
+    double theta, convergence;
     int n = N, lda = N, ldvl = N, ldvr = N, info;
     int maximum;
     double wi[n], vl[ldvl*n];
     double a[N*N];
-    print_matrice(A);
+    //print_matrice(A);
     for(j=0; j < N ; j++)
     {
 
       w[j]=prod_matrice_vecteur(A,v[j]);
-      printf("Le vecteur w et v \n");
-      print_vecteur(w[j]);
-      print_vecteur(v[j]);
+      //printf("Le vecteur w et v \n");
+      //print_vecteur(w[j]);
+      //print_vecteur(v[j]);
       for(k = 0; k<j; k++)
       {
           H.M[k][j] = prod_scal(v[k],w[j]);
           H.M[j][k] = prod_scal(v[j],w[k]);
       }
           H.M[j][j] = prod_scal(v[j],w[j]);
-      print_matrice(H);
+      //print_matrice(H);
       /* Solve eigenproblem */
+      //printf("Max EigenValue : %2f\n", wr[0]);
       init_lapack(N,a,H);
+      //re_init(wr,N);
       info = LAPACKE_dgeev( LAPACK_ROW_MAJOR, 'V', 'V', n, a, lda, wr, wi,
                           vl, ldvl, vr, ldvr );
       /* vérifie la convergence */
@@ -528,16 +524,44 @@ void davidson(int N, double wr[N], double vr[N*N], int nb_eig)
       //print_eigenvalues( "Eigenvalues", n, wr, wi );
       //print_eigenvectors( "Left eigenvectors", n, wi, vl, ldvl );
       //print_eigenvectors( "Right eigenvectors", n, wi, vr, ldvr );
-      for(int l=0; l<nb_eig; l++)
-      {
-        printf("Max EigenValue : %2f\n", wr[maximum+l]);
-        printf("EigenVector : %2f\n", vr[maximum+l]);
-      }
+      //for(int l=0; l<nb_eig; l++)
+      //{
+        //printf("Max EigenValue : %2f\n", wr[maximum+l]);
+        //printf("EigenVector : %2f\n", vr[maximum+l]);
+      //}
       theta =  wr[maximum]; // recupere la valeur propre max , les autres sont dans wr
+      if ( j == 0)
+      {
+        convergence = theta;
+      }else if (theta > convergence)
+      {
+        if (P > theta - convergence)
+        {
+          printf("convergence ! \n");
+          break;
+        }else{
+          convergence = theta;
+        }
+      }else if(theta < convergence)
+      {
+
+      if (P >  convergence - theta)
+      {
+        printf("convergence ! \n");
+        break;
+      }else{
+        convergence = theta;
+      }
+    }else{
+      printf("convergence ! \n");
+      break;
+    }
+
       d_v(vr,s); // Remet le vecteur dans la structure de donnée
       tmpY = col(v[j]); // Transforme un vecteur en matrice
       y = prod_matrice_vecteur(tmpY, s);
       r = sous_vect(prod_matrice_vecteur(A,y),scal_vect(theta,y));
+      //print_vecteur(r);
       inverse = sous_mat(Da,scal_mat(theta,id));
       // inversion de matrice LAPACKE_dgetrf et LAPACKE_dgetri
       int pivotArray[N+1];
@@ -551,36 +575,70 @@ void davidson(int N, double wr[N], double vr[N*N], int nb_eig)
         //exit( 1 );
       }
       err = LAPACKE_dgetri(LAPACK_ROW_MAJOR,N,inverse_lapack,N,pivotArray);
-      printf( "inversion faite \n");
+      //printf( "inversion faite \n");
       return_matrice(N, inverse_lapack, inverse);
       t = prod_matrice_vecteur(inverse,r);
       double uu;
       uu = prod_scal(v[j],v[j]);
       tmpT = scal_vect(uu,t);
       t = sous_vect(t,tmpT);
-      print_vecteur(t);
+      //print_vecteur(t);
       v[j+1] = norm(t);
       printf("itération  numeros %d \n",j);
     }
 }
-
+void test(matrice A, int N, int nb_eig)
+{
+  int n = N, lda = N, ldvl = N, ldvr = N, info;
+  int maximum;
+  double wi[n], vl[ldvl*n];
+  double a[N*N];
+  double test_eigen[N];
+  double test_vect[N*N];
+  init_lapack(N,a,A);
+  info = LAPACKE_dgeev( LAPACK_ROW_MAJOR, 'V', 'V', n, a, lda, test_eigen, wi,
+                      vl, ldvl, test_vect, ldvr );
+  /* vérifie la convergence */
+  if( info > 0 ) {
+          printf( "Failed to compute eigenvalues.\n" );
+          exit( 1 );
+  }
+  maximum = max(test_eigen, n);
+  printf("EigenValue Test:");
+  for(int l=0; l<nb_eig; l++)
+  {
+    printf(" %2f \n", test_eigen[maximum+l]);
+  }
+  printf ("\n");
+}
 int main(int argc, char const *argv[]) {
   uint64_t  useconde_start, useconde_stop, time_elapsed;
   struct timeval tv;
   time_elapsed = 0;
   int i, N, nb_eig; // N la taille de la matice A(N*N)
-  N = 5;
+  N =200;
   nb_eig = 5;
+  int maximum;
+  matrice A; // initialisation de la matrice
+  A = init_matrice_test(N,N);
   double wr[N],vr[N*N];
-  for (i = 0; i<10; i++)
-  {
+//  for (i = 0; i<10; i++)
+//  {
     gettimeofday(&tv, NULL);
     useconde_start = (tv.tv_sec * (uint64_t)1000) + (tv.tv_usec / 1000);
-    davidson(N,wr,vr,nb_eig);
+    davidson(A,N,wr,vr,nb_eig);
     gettimeofday(&tv, NULL);
     useconde_stop = (tv.tv_sec * (uint64_t)1000) + (tv.tv_usec / 1000);
     time_elapsed += (useconde_stop - useconde_start);
-  }
+//  }
   printf("Time Elapsed : %ld ms \n",time_elapsed/10);
+  test(A,N,nb_eig);
+  maximum = max(wr, N);
+  printf("EigenValue Davidson:");
+  for(int l=0; l<nb_eig; l++)
+  {
+    printf(" %2f \n", wr[maximum+l]);
+  }
+  printf ("\n");
   return 0;
 }
