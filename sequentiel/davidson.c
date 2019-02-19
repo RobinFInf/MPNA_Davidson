@@ -9,7 +9,6 @@
 #include <stdint.h>
 #include <lapacke.h>
 #include <math.h>
-//#include <mpi.h>
 #define P  0.000001
 
 struct vecteur {
@@ -66,7 +65,8 @@ matrice init_matrice(int a, int b, double val)
 matrice init_matrice_test(int a, int b)
 {
   matrice M;
-  int i,j;
+  int i,j,alea;
+  srand(time(NULL)); // initialisation de rand
   M.ligne = a;
   M.colonne = b;
   M.M = malloc(a*sizeof(double*));
@@ -78,11 +78,18 @@ matrice init_matrice_test(int a, int b)
   {
     for(j=0;j < M.colonne; j++)
     {
+       alea = rand()%(a/2);
 	     if (i == j)
        {
-               M.M[i][j] = i%10;
+               M.M[i][j] = i%5;
        }else{
-               M.M[i][j] = 0;
+            if(alea < 0.10 * (a/2))
+            {
+                 M.M[i][j] = rand()%10;
+            }
+            else{
+                 M.M[i][j] = 0.0;
+            }
        }
     }
   }
@@ -379,8 +386,9 @@ vecteur norm(vecteur v)
   vecteur res;
   int i;
   double tot;
+  tot = v.T[0]*v.T[0];
   res = init_vecteur(v.size, 0.0);
-  for(i=0; i<v.size; i++)
+  for(i=1; i<v.size; i++)
   {
     tot += v.T[i]*v.T[i];
   }
@@ -396,7 +404,7 @@ void init_lapack(int n, double* a, matrice m)
 {
   for (int i = 0; i < n; i++) {
     for (int j = 0; j < n; j++) {
-      a[i*n+j] = m.M[i][j];
+      a[(i*n)+j] = m.M[i][j];
     }
   }
 }
@@ -435,191 +443,77 @@ void re_init(double * v, int N)
     v[i] = 0.0;
   }
 }
-
-/*
-int pmap(int i, int size, matrice m){
-  size = size-1;
-  int r = (int)ceil((double)m.ligne / (double)size);
-  int proc = i/r;
-  return proc+1;
-}
-
-vecteur prod_matrice_vecteur_MPI(matrice m, vecteur v)
+void ajout_col(vecteur v, int n, matrice a)
 {
-  int size, rank;
-  MPI_Status stat;
-  MPI_Comm_size(MPI_COMM_WORLD, &size);
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  vecteur res;
-  res = init_vecteur(v.size, 0.0);
-
-  if (rank == 0) {
-    for (int i = 0; i < m.ligne; i++) {
-      int proc = pmap(i, size, m);
-      MPI_Send(m.M[i], m.colonne, MPI_DOUBLE, proc, (100*(i+1)), MPI_COMM_WORLD);
-    }
-    for (int i = 0; i < m.ligne; i++) {
-      int sender_proc = pmap(i, size, m);
-      MPI_Recv(&res.T[i], m.colonne, MPI_DOUBLE, sender_proc, i, MPI_COMM_WORLD, &stat);
-    }
-  }else{
-    for (int i = 0; i < m.ligne; i++) {
-      int proc = pmap(i, size, m);
-      if (rank == proc) {
-        double b[m.colonne];
-        MPI_Recv(b, m.colonne, MPI_DOUBLE, 0, (100*(i+1)), MPI_COMM_WORLD, &stat);
-        double sum = 0.0;
-        #pragma omp parallel for reduction(+:sum)
-        for (int j = 0; j < m.colonne; j++) {
-          sum = sum + (b[j] * v.T[j]);
-        }
-        MPI_Send(&sum, 1, MPI_DOUBLE, 0, i, MPI_COMM_WORLD);
-      }
+  int i;
+  for(i=0; i<v.size; i++)
+  {
+    a.M[i][n] = v.T[i];
+  }
+}
+matrice transpose(matrice a)
+{
+  int i,j;
+  matrice b;
+  b=init_matrice(a.ligne,a.colonne,0.0);
+  for (i=0; i<a.ligne; i++)
+  {
+    for(j=0; j<a.colonne; j++)
+    {
+      b.M[i][j] = a.M[j][i];
     }
   }
-  return res;
+  return b;
 }
-
-matrice prod_matrice_matrice_MPI(matrice m, matrice m2)
-{
-  int size, rank;
-  MPI_Status stat;
-  MPI_Comm_size(MPI_COMM_WORLD, &size);
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  matrice res;
-  res = init_matrice(m.ligne, m2.colonne, 0.0);
-
-  if (rank == 0) {
-    for (int i = 0; i < m.ligne; i++) {
-      int proc = pmap(i, size, m);
-      MPI_Send(m.M[i], m.colonne, MPI_DOUBLE, proc, (100*(i+1)), MPI_COMM_WORLD);
-    }
-    for (int i = 0; i < m.ligne; i++) {
-      int sender_proc = pmap(i, size, m);
-      MPI_Recv(res.M[i], m2.colonne, MPI_DOUBLE, sender_proc, i, MPI_COMM_WORLD, &stat);
-    }
-  }else{
-    for (int i = 0; i < m.ligne; i++) {
-      int proc = pmap(i, size, m);
-      double c[m2.colonne];
-      if (rank == proc) {
-        double b[m.colonne];
-        MPI_Recv(b, m.colonne, MPI_DOUBLE, 0, (100*(i+1)), MPI_COMM_WORLD, &stat);
-        #pragma omp parallel for reduction(+:sum)
-        for (int j = 0; j < m.colonne; j++) {
-          double sum = 0.0;
-          for (int k = 0; k < m.colonne; k++) {
-            sum = sum + (b[k] * m2.M[k][j]);
-          }
-          c[j] = sum;
-        }
-        MPI_Send(c, m2.colonne, MPI_DOUBLE, 0, i, MPI_COMM_WORLD);
-      }
-    }
-  }
-  return res;
-}
-
-*/
-
 void davidson(matrice A,int N, double wr[N], double vr[N*N], int nb_eig)
 {
-    int j,k;
-    matrice  H, Da, id, tmpY, inverse;
-    vecteur v[N];
+  //INITIALISATION////////////////////////
+    int j, n = N, lda = N, ldvl = N, ldvr = N, info, maximum, pivotArray[N], err;
+    double theta, wi[n], vl[ldvl*n], a[N*N], inverse_lapack[N*N];
+    matrice  H, Da, id, tmpY, inverse, W, V;
+    vecteur r, y, s, t, v[N];
     Da = init_matrice(N,N,2.0);
     id = init_matrice_ident(N,N);
     H = init_matrice(N,N,0.0);
+    W = init_matrice(N,N,0.0);
+    V = init_matrice(N,N,0.0);
     v[0] = init_vecteur(N,1.0);
-    vecteur w[N];
-    vecteur r, y, s, t, tmpT;
     s = init_vecteur(N,0.0);
-    double theta, convergence;
-    int n = N, lda = N, ldvl = N, ldvr = N, info;
-    int maximum;
-    double wi[n], vl[ldvl*n];
-    double a[N*N];
-    //print_matrice(A);
-    for(j=0; j < N ; j++)
+    ////////////////////////////////////////////////////////////////////////////////////:
+    for(j=0; j < N-1 ; j++)
     {
-
-      w[j]=prod_matrice_vecteur(A,v[j]);
-      for(k = 0; k<j; k++)
-      {
-          H.M[k][j] = prod_scal(v[k],w[j]);
-          H.M[j][k] = prod_scal(v[j],w[k]);
-      }
-          H.M[j][j] = prod_scal(v[j],w[j]);
-      /* Solve eigenproblem */
-      init_lapack(N,a,H);;
+      ajout_col(v[j], j, V);
+      W=prod_matrice_matrice(A,V);
+      H=prod_matrice_matrice(transpose(V),W);
+      init_lapack(N,a,H);
       info = LAPACKE_dgeev( LAPACK_ROW_MAJOR, 'V', 'V', n, a, lda, wr, wi,
                           vl, ldvl, vr, ldvr );
-
-      /* vérifie la convergence */
       if( info > 0 ) {
               printf( "Failed to compute eigenvalues.\n" );
               exit( 1 );
       }
       maximum = max(wr, n);
       theta =  wr[maximum]; // recupere la valeur propre max , les autres sont dans wr
-      if ( j == 0)
-      {
-        convergence = theta;
-      }else if (theta > convergence)
-      {
-        if (P > theta - convergence)
-        {
-          printf("convergence ! \n");
-          break;
-        }else{
-          convergence = theta;
-        }
-      }else if(theta < convergence)
-      {
-
-      if (P >  convergence - theta)
-      {
-        printf("convergence ! \n");
-        break;
-      }else{
-        convergence = theta;
-      }
-    }else{
-      printf("convergence ! \n");
-      break;
-    }
-
       d_v(vr,s); // Remet le vecteur dans la structure de donnée
       tmpY = col(v[j]); // Transforme un vecteur en matrice
       y = prod_matrice_vecteur(tmpY, s);
       r = sous_vect(prod_matrice_vecteur(A,y),scal_vect(theta,y));
-      //print_vecteur(r);
+      maximum = max(r.T, n);
+      wr[maximum] = r.T[maximum];
       inverse = sous_mat(Da,scal_mat(theta,id));
-      // inversion de matrice LAPACKE_dgetrf et LAPACKE_dgetri
-      int pivotArray[N+1];
-      lapack_int err;
-      double inverse_lapack[N*N];
       init_lapack(N,inverse_lapack,inverse);
       err = LAPACKE_dgetrf(LAPACK_ROW_MAJOR,N,N,inverse_lapack,N,pivotArray);
       if (err !=0 )
       {
         printf("erreur sur LAPACKE_dgetrf err=%d \n",err);
-        //exit( 1 );
+        exit( 1 );
       }
-
       err = LAPACKE_dgetri(LAPACK_ROW_MAJOR,N,inverse_lapack,N,pivotArray);
-      //printf( "inversion faite \n");
       return_matrice(N, inverse_lapack, inverse);
       t = prod_matrice_vecteur(inverse,r);
-      double uu;
-      uu = prod_scal(v[j],v[j]);
-      tmpT = scal_vect(uu,t);
-      t = sous_vect(t,tmpT);
-      //print_vecteur(t);
       v[j+1] = norm(t);
       printf("itération  numeros %d \n",j);
     }
-    free(v);
 }
 void test(matrice A, int N, int nb_eig)
 {
@@ -632,7 +526,6 @@ void test(matrice A, int N, int nb_eig)
   init_lapack(N,a,A);
   info = LAPACKE_dgeev( LAPACK_ROW_MAJOR, 'V', 'V', n, a, lda, test_eigen, wi,
                       vl, ldvl, test_vect, ldvr );
-  /* vérifie la convergence */
   if( info > 0 ) {
           printf( "Failed to compute eigenvalues.\n" );
           exit( 1 );
@@ -646,15 +539,22 @@ void test(matrice A, int N, int nb_eig)
   printf ("\n");
 }
 int main(int argc, char const *argv[]) {
+  if (argc != 2)
+  {
+    printf("Ne pas oublier la taille de la matrice\n");
+    exit(0);
+  }
   uint64_t  useconde_start, useconde_stop, time_elapsed;
   struct timeval tv;
   time_elapsed = 0;
   int N, nb_eig; // N la taille de la matice A(N*N)
-  N =399;
-  nb_eig = 5;
+  N = atoi(argv[1]);
+  printf("taille de Matrice = %d * %d",N,N);
+  nb_eig = 1;
   int maximum;
   matrice A; // initialisation de la matrice
-  A = init_matrice_test(N,N);
+  A = init_matrice_test(N,N);// fonction pour initialiser une matrice diagonale symétrique sinon remplir le champs M de la matrice
+                              //avec la fonction void return_matrice(int n, double * d, matrice m)
   double wr[N],vr[N*N];
 //  for (int i = 0; i<10; i++)
 //  {
