@@ -513,7 +513,7 @@ void davidson(matrice A,int N, double wr[N], double vr[N*N], int nb_eig)
   //INITIALISATION////////////////////////
     int j, k, n = N, lda = N, ldvl = N, ldvr = N, info, maximum, pivotArray[N], err;
     double theta, convergence, wi[n], vl[ldvl*n], a[N*N], inverse_lapack[N*N];
-    matrice  H, Da, id, tmpY, inverse, W, V;
+    matrice  H, Da, id, inverse, W, V;
     vecteur r, y, s, t, tmpT, v[N];
     Da = init_matrice(N,N,2.0);
     id = init_matrice_ident(N,N);
@@ -538,8 +538,7 @@ void davidson(matrice A,int N, double wr[N], double vr[N*N], int nb_eig)
       maximum = max(wr, n);
       theta =  wr[maximum]; // recupere la valeur propre max , les autres sont dans wr
       d_v(vr,s); // Remet le vecteur dans la structure de donnée
-      tmpY = col(v[j]); // Transforme un vecteur en matrice
-      y = prod_matrice_vecteur_par(tmpY, s);
+      y = prod_matrice_vecteur_par(V, s);
       r = sous_vect(prod_matrice_vecteur_par(A,y),scal_vect(theta,y));
       maximum = max(r.T, n);
       wr[maximum] = r.T[maximum];
