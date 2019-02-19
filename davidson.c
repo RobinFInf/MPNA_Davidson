@@ -435,7 +435,9 @@ void re_init(double * v, int N)
     v[i] = 0.0;
   }
 }
-/*int pmap(int i, int size, matrice m){
+
+/*
+int pmap(int i, int size, matrice m){
   size = size-1;
   int r = (int)ceil((double)m.ligne / (double)size);
   int proc = i/r;
@@ -467,6 +469,7 @@ vecteur prod_matrice_vecteur_MPI(matrice m, vecteur v)
         double b[m.colonne];
         MPI_Recv(b, m.colonne, MPI_DOUBLE, 0, (100*(i+1)), MPI_COMM_WORLD, &stat);
         double sum = 0.0;
+        #pragma omp parallel for reduction(+:sum)
         for (int j = 0; j < m.colonne; j++) {
           sum = sum + (b[j] * v.T[j]);
         }
@@ -476,7 +479,49 @@ vecteur prod_matrice_vecteur_MPI(matrice m, vecteur v)
   }
   return res;
 }
+
+matrice prod_matrice_matrice_MPI(matrice m, matrice m2)
+{
+  int size, rank;
+  MPI_Status stat;
+  MPI_Comm_size(MPI_COMM_WORLD, &size);
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  matrice res;
+  res = init_matrice(m.ligne, m2.colonne, 0.0);
+
+  if (rank == 0) {
+    for (int i = 0; i < m.ligne; i++) {
+      int proc = pmap(i, size, m);
+      MPI_Send(m.M[i], m.colonne, MPI_DOUBLE, proc, (100*(i+1)), MPI_COMM_WORLD);
+    }
+    for (int i = 0; i < m.ligne; i++) {
+      int sender_proc = pmap(i, size, m);
+      MPI_Recv(res.M[i], m2.colonne, MPI_DOUBLE, sender_proc, i, MPI_COMM_WORLD, &stat);
+    }
+  }else{
+    for (int i = 0; i < m.ligne; i++) {
+      int proc = pmap(i, size, m);
+      double c[m2.colonne];
+      if (rank == proc) {
+        double b[m.colonne];
+        MPI_Recv(b, m.colonne, MPI_DOUBLE, 0, (100*(i+1)), MPI_COMM_WORLD, &stat);
+        #pragma omp parallel for reduction(+:sum)
+        for (int j = 0; j < m.colonne; j++) {
+          double sum = 0.0;
+          for (int k = 0; k < m.colonne; k++) {
+            sum = sum + (b[k] * m2.M[k][j]);
+          }
+          c[j] = sum;
+        }
+        MPI_Send(c, m2.colonne, MPI_DOUBLE, 0, i, MPI_COMM_WORLD);
+      }
+    }
+  }
+  return res;
+}
+
 */
+
 void davidson(matrice A,int N, double wr[N], double vr[N*N], int nb_eig)
 {
     int j,k;
@@ -499,36 +544,23 @@ void davidson(matrice A,int N, double wr[N], double vr[N*N], int nb_eig)
     {
 
       w[j]=prod_matrice_vecteur(A,v[j]);
-      //printf("Le vecteur w et v \n");
-      //print_vecteur(w[j]);
-      //print_vecteur(v[j]);
       for(k = 0; k<j; k++)
       {
           H.M[k][j] = prod_scal(v[k],w[j]);
           H.M[j][k] = prod_scal(v[j],w[k]);
       }
           H.M[j][j] = prod_scal(v[j],w[j]);
-      //print_matrice(H);
       /* Solve eigenproblem */
-      //printf("Max EigenValue : %2f\n", wr[0]);
-      init_lapack(N,a,H);
-      //re_init(wr,N);
+      init_lapack(N,a,H);;
       info = LAPACKE_dgeev( LAPACK_ROW_MAJOR, 'V', 'V', n, a, lda, wr, wi,
                           vl, ldvl, vr, ldvr );
+
       /* vérifie la convergence */
       if( info > 0 ) {
               printf( "Failed to compute eigenvalues.\n" );
               exit( 1 );
       }
       maximum = max(wr, n);
-      //print_eigenvalues( "Eigenvalues", n, wr, wi );
-      //print_eigenvectors( "Left eigenvectors", n, wi, vl, ldvl );
-      //print_eigenvectors( "Right eigenvectors", n, wi, vr, ldvr );
-      //for(int l=0; l<nb_eig; l++)
-      //{
-        //printf("Max EigenValue : %2f\n", wr[maximum+l]);
-        //printf("EigenVector : %2f\n", vr[maximum+l]);
-      //}
       theta =  wr[maximum]; // recupere la valeur propre max , les autres sont dans wr
       if ( j == 0)
       {
@@ -574,6 +606,7 @@ void davidson(matrice A,int N, double wr[N], double vr[N*N], int nb_eig)
         printf("erreur sur LAPACKE_dgetrf err=%d \n",err);
         //exit( 1 );
       }
+
       err = LAPACKE_dgetri(LAPACK_ROW_MAJOR,N,inverse_lapack,N,pivotArray);
       //printf( "inversion faite \n");
       return_matrice(N, inverse_lapack, inverse);
@@ -586,6 +619,7 @@ void davidson(matrice A,int N, double wr[N], double vr[N*N], int nb_eig)
       v[j+1] = norm(t);
       printf("itération  numeros %d \n",j);
     }
+    free(v);
 }
 void test(matrice A, int N, int nb_eig)
 {
@@ -615,14 +649,14 @@ int main(int argc, char const *argv[]) {
   uint64_t  useconde_start, useconde_stop, time_elapsed;
   struct timeval tv;
   time_elapsed = 0;
-  int i, N, nb_eig; // N la taille de la matice A(N*N)
-  N =200;
+  int N, nb_eig; // N la taille de la matice A(N*N)
+  N =399;
   nb_eig = 5;
   int maximum;
   matrice A; // initialisation de la matrice
   A = init_matrice_test(N,N);
   double wr[N],vr[N*N];
-//  for (i = 0; i<10; i++)
+//  for (int i = 0; i<10; i++)
 //  {
     gettimeofday(&tv, NULL);
     useconde_start = (tv.tv_sec * (uint64_t)1000) + (tv.tv_usec / 1000);
