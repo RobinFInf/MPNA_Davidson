@@ -532,9 +532,9 @@ matrice prod_matrice_matrice_MPI(matrice m, matrice m2)
       if (rank == proc) {
         double b[m.colonne];
         MPI_Recv(b, m.colonne, MPI_DOUBLE, 0, (100*(i+1)), MPI_COMM_WORLD, &stat);
-        #pragma omp parallel for reduction(+:sum)
         for (int j = 0; j < m.colonne; j++) {
           double sum = 0.0;
+          #pragma omp parallel for reduction(+:sum)
           for (int k = 0; k < m.colonne; k++) {
             sum = sum + (b[k] * m2.M[k][j]);
           }
