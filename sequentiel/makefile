@@ -4,6 +4,6 @@ davidson: davidson.o
 davidson.o: davidson.c
 	gcc -fopenmp -o davidson.o -c davidson.c -Wall -llapacke -lm -g
 run :
-	./davidson.exe
+	./davidson.exe 50
 clean :
 	rm *.o *.exe

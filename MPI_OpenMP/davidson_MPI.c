@@ -8,9 +8,13 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <lapacke.h>
-#include <math.h>
 #include <mpi.h>
-#define P  0.000001
+#include <math.h>
+#define P  0.0001
+
+
+int convergence;
+double * wr;
 
 struct vecteur {
   int size;
@@ -84,7 +88,7 @@ matrice init_matrice_test(int a, int b)
        {
                M.M[i][j] = i%5;
        }else{
-            if(alea < 0.10 * (a/2))
+            if(alea < 0.20 * (a/2))
             {
                  M.M[i][j] = rand()%10;
             }
@@ -122,6 +126,42 @@ matrice init_matrice_ident(int a, int b)
   return M;
 }
 
+matrice init_matrice_test_precision(int a, int b)
+{
+  matrice M;
+    int i,j;
+    M.ligne = a;
+    M.colonne = b;
+    M.M = malloc(a*sizeof(double*));
+    for(i=0;i < a;i++)
+    {
+      M.M[i]=malloc(b*sizeof(double));
+    }
+    for (i=0;i < M.ligne; i++)
+    {
+      for(j=0;j < M.colonne; j++)
+      {
+  	     if (i == j)
+         {
+                 M.M[i][j] = i+1;
+         }else{
+                 M.M[i][j] = 0;
+         }
+      }
+    }
+    for(i=0; i<M.ligne; i++)
+    {
+      if( i != M.ligne -1)
+      {
+        M.M[i][i+1] = -0.1;
+      }
+      if(i != 0)
+      {
+        M.M[i][i-1] = 0.1;
+      }
+    }
+  return M;
+}
 vecteur prod_matrice_vecteur(matrice m, vecteur v)
 {
   vecteur res;
@@ -374,34 +414,46 @@ matrice sous_mat(matrice a, matrice b)
   }
   return M;
 }
-void d_v(double * d, vecteur v)
+void d_v(double * d, vecteur v, int maximum)
 {
   int i;
   for(i=0; i<v.size; i++)
   {
-    v.T[i]=d[i];
+    v.T[i]=d[i+v.size*maximum];
   }
 }
-vecteur norm(vecteur v)
+double norm(vecteur v)
 {
-  vecteur res;
   int i;
   double tot;
   tot = v.T[0]*v.T[0];
-  res = init_vecteur(v.size, 0.0);
   for(i=1; i<v.size; i++)
   {
     tot += v.T[i]*v.T[i];
   }
   tot = sqrt(fabs(tot));
-  for(i=0; i<v.size; i++)
+  return tot;
+}
+
+vecteur norm2(vecteur v)
+{
+  int i;
+  double tot;
+  vecteur res;
+  res = init_vecteur(v.size,0.0);
+  tot = v.T[0]*v.T[0];
+  for(i=1; i<v.size; i++)
   {
-  res.T[i]= v.T[i]/tot;
+    tot += v.T[i]*v.T[i];
+  }
+  tot = sqrt(fabs(tot));
+  for(i = 0; i<v.size; i++)
+  {
+    res.T[i] = v.T[i]/tot;
   }
   return res;
 }
-
-void init_lapack(int n, double* a, matrice m)
+void init_lapack2(int n, double* a, matrice m)
 {
   for (int i = 0; i < n; i++) {
     for (int j = 0; j < n; j++) {
@@ -410,10 +462,18 @@ void init_lapack(int n, double* a, matrice m)
   }
 }
 
+void init_lapack(int n, double* a, matrice m , matrice A)
+{
+  for (int i = 0; i < A.ligne; i++) {
+    for (int j = 0; j < A.colonne; j++) {
+      a[(i*n)+j] = m.M[i][j];
+    }
+  }
+}
 void return_matrice(int n, double * d, matrice m)
 {
-  for (int i = 0; i < n; i++) {
-    for (int j = 0; j < n; j++) {
+  for (int i = 0; i < m.ligne; i++) {
+    for (int j = 0; j < m.colonne; j++) {
      m.M[i][j] = d[i*n+j];
     }
   }
@@ -444,6 +504,39 @@ void re_init(double * v, int N)
     v[i] = 0.0;
   }
 }
+vecteur projection(vecteur v, vecteur u) // Algo wikipédia de gram-schmitz
+{
+  double tmp;
+  tmp = prod_scal(u,v);
+  tmp = tmp / (prod_scal(u,u));
+  vecteur res;
+  res = scal_vect(tmp,u);
+  return res;
+}
+vecteur orthonormalize(vecteur* a, vecteur b, int j)
+{
+  if (j == 0)
+  {
+    //printf("\n 1 \n");
+    return b;
+  }
+  if ( j == 1)
+  {
+    vecteur res = init_vecteur(b.size, 0.0);
+    res = sous_vect(b,projection(b,a[0]));
+    //printf("\n 2 \n");
+    return res;
+    }else{
+    vecteur res = init_vecteur(b.size, 0.0);
+    res = sous_vect(b,projection(b,a[0]));
+    for ( int i = 1; i < j; i++ )
+    {
+    res = sous_vect(res,projection(b,a[i]));
+    }
+    //printf("\n 3 \n");
+    return res;
+  }
+}
 void ajout_col(vecteur v, int n, matrice a)
 {
   int i;
@@ -466,6 +559,7 @@ matrice transpose(matrice a)
   }
   return b;
 }
+
 int pmap(int i, int size, matrice m){
   size = size-1;
   int r = (int)ceil((double)m.ligne / (double)size);
@@ -489,7 +583,7 @@ vecteur prod_matrice_vecteur_MPI(matrice m, vecteur v)
     }
     for (int i = 0; i < m.ligne; i++) {
       int sender_proc = pmap(i, size, m);
-      MPI_Recv(&res.T[i], m.colonne, MPI_DOUBLE, sender_proc, i, MPI_COMM_WORLD, &stat);
+      MPI_Recv(&res.T[i], 1, MPI_DOUBLE, sender_proc, i, MPI_COMM_WORLD, &stat);
     }
   }else{
     for (int i = 0; i < m.ligne; i++) {
@@ -547,98 +641,68 @@ matrice prod_matrice_matrice_MPI(matrice m, matrice m2)
   return res;
 }
 
-void davidson(matrice A,int N, double wr[N], double vr[N*N], int nb_eig)
+vecteur davidson(matrice A,int N, double wr[N], double vr[N*N], int nb_eig, vecteur ritz)
 {
     //INITIALISATION MPI////////////////////////
     int size, rang;
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rang);
     //INITIALISATION////////////////////////
-    int j, k, n = N, lda = N, ldvl = N, ldvr = N, info, maximum, pivotArray[N], err;
-    double theta, convergence, wi[n], vl[ldvl*n], a[N*N], inverse_lapack[N*N];
-    matrice  H, Da, id, tmpY, inverse, W, V;
-    vecteur r, y, s, t, tmpT, v[N];
+    int j, n = N, lda = N, ldvl = N, ldvr = N, info, maximum, pivotArray[N], err;
+    double theta, wi[n], vl[ldvl*n], h[N*N], inverse_lapack[N*N];
+    matrice  H, Da, id, inverse, W, V;
+    vecteur r, s, t, v[N];
     Da = init_matrice(N,N,2.0);
     id = init_matrice_ident(N,N);
     H = init_matrice(N,N,0.0);
     W = init_matrice(N,N,0.0);
     V = init_matrice(N,N,0.0);
-    v[0] = init_vecteur(N,1.0);
+    v[0] = ritz;
     s = init_vecteur(N,0.0);
     ////////////////////////////////////////////////////////////////////////////////////:
     for(j=0; j < N-1 ; j++)
     {
-      if (rang == 0)
-      {
-        ajout_col(v[j], j, V);
+      ajout_col(v[j], j, V);
+      W=prod_matrice_matrice_MPI(A,V);
+      H=prod_matrice_matrice_MPI(transpose(V),W);
+      init_lapack(N,h,A,H);
+      // on cherche les valeurs propres de la matrice H
+      info = LAPACKE_dgeev( LAPACK_ROW_MAJOR, 'V', 'V', n, h, lda, wr, wi,
+                          vl, ldvl, vr, ldvr );
+      if( info > 0 ) {
+              printf( "Failed to compute eigenvalues.\n" );
+              exit( 1 );
       }
-        W=prod_matrice_matrice_MPI(A,V);
-        H=prod_matrice_matrice_MPI(transpose(V),W);
-      if (rang == 0)
+      maximum = max(wr, n);
+      theta =  wr[maximum]; // recupere la valeur propre max , les autres sont dans wr
+      d_v(vr,s,maximum); // Remet le vecteur dans la structure de donnée
+      ritz = prod_matrice_vecteur_MPI(V,s);
+      r = sous_vect(prod_matrice_vecteur_MPI(A,ritz),scal_vect(theta,ritz));
+      /////////////////Fin de la procedure de rayleiht-ritz ///////////////
+      if (norm(r) < P && j == N/2) // On garde une certaine précison en vérifiant la convergence
       {
-        init_lapack(N,a,H);
-        info = LAPACKE_dgeev( LAPACK_ROW_MAJOR, 'V', 'V', n, a, lda, wr, wi,
-                            vl, ldvl, vr, ldvr );
-        if( info > 0 ) {
-                printf( "Failed to compute eigenvalues.\n" );
-                exit( 1 );
-              }
-        maximum = max(wr, n);
-        theta =  wr[maximum]; // recupere la valeur propre max , les autres sont dans wr
-        d_v(vr,s); // Remet le vecteur dans la structure de donnée
-        tmpY = col(v[j]); // Transforme un vecteur en matrice
+        convergence = 1;
+        return ritz;
       }
-      y = prod_matrice_vecteur_MPI(tmpY, s);
-      tmpT = prod_matrice_vecteur_MPI(A,y);
-      if(rang == 0)
+      inverse = sous_mat(Da,scal_mat(theta,id));
+      init_lapack2(N,inverse_lapack,inverse);
+      // On calcul le vecteur de redémarage
+      err = LAPACKE_dgetrf(LAPACK_ROW_MAJOR,N,N,inverse_lapack,N,pivotArray);
+      if (err !=0 )
       {
-        r = sous_vect(tmpT,scal_vect(theta,y));
-        maximum = max(r.T, n);
-        wr[maximum] = r.T[maximum];
-        inverse = sous_mat(Da,scal_mat(theta,id));
-        init_lapack(N,inverse_lapack,inverse);
-        err = LAPACKE_dgetrf(LAPACK_ROW_MAJOR,N,N,inverse_lapack,N,pivotArray);
-        if (err !=0 )
-        {
-          printf("erreur sur LAPACKE_dgetrf err=%d \n",err);
-          exit( 1 );
-        }
-        err = LAPACKE_dgetri(LAPACK_ROW_MAJOR,N,inverse_lapack,N,pivotArray);
-        return_matrice(N, inverse_lapack, inverse);
+        printf("erreur sur LAPACKE_dgetrf err=%d \n",err);
+        exit( 1 );
+      }
+      err = LAPACKE_dgetri(LAPACK_ROW_MAJOR,N,inverse_lapack,N,pivotArray);
+      return_matrice(N, inverse_lapack, inverse);
+      t = prod_matrice_vecteur_MPI(inverse,r);
+      v[j+1] =orthonormalize(v,t,j);
     }
-    t = prod_matrice_vecteur_MPI(inverse,r);
-    if(rang == 0)
-    {
-      v[j+1] = norm(t);
-      printf("itération  numeros %d \n",j);
-    }
-    }
+    return ritz; // On redemare avec le vecteur de ritz
 }
-void test(matrice A, int N, int nb_eig)
-{
-  int n = N, lda = N, ldvl = N, ldvr = N, info;
-  int maximum;
-  double wi[n], vl[ldvl*n];
-  double a[N*N];
-  double test_eigen[N];
-  double test_vect[N*N];
-  init_lapack(N,a,A);
-  info = LAPACKE_dgeev( LAPACK_ROW_MAJOR, 'V', 'V', n, a, lda, test_eigen, wi,
-                      vl, ldvl, test_vect, ldvr );
-  if( info > 0 ) {
-          printf( "Failed to compute eigenvalues.\n" );
-          exit( 1 );
-  }
-  maximum = max(test_eigen, n);
-  printf("EigenValue Test:");
-  for(int l=0; l<nb_eig; l++)
-  {
-    printf(" %2f \n", test_eigen[maximum+l]);
-  }
-  printf ("\n");
-}
+
 int main(int argc, char *argv[]) {
-  MPI_Init(&argc,&argv);
+  MPI_Init(&argc, &argv);
   int size, rang;
   MPI_Comm_size(MPI_COMM_WORLD, &size);
   MPI_Comm_rank(MPI_COMM_WORLD, &rang);
@@ -652,41 +716,48 @@ int main(int argc, char *argv[]) {
   time_elapsed = 0;
   int N, nb_eig; // N la taille de la matice A(N*N)
   N = atoi(argv[1]);
-  printf("taille de vecteur = %d",N);
+  printf("taille de Matrice = %d * %d \n",N,N);
   nb_eig = 1;
   int maximum;
   matrice A; // initialisation de la matrice
-  A = init_matrice_test(N,N);
-  double wr[N],vr[N*N];
-//  for (int i = 0; i<10; i++)
-//  {
-    if(rang == 0)
+  A = init_matrice_test_precision(N,N);// fonction pour initialiser une matrice diagonale symétrique sinon remplir le champs M de la matrice
+                                      //avec la fonction void return_matrice(int n, double * d, matrice m)
+  double vr[N*N];
+  wr = malloc(N*sizeof(double));
+  vecteur ritz, tmp;
+  ritz = init_vecteur(N,1.0);
+  tmp = init_vecteur(N,0.0);
+  convergence = 0;
+  if(rang == 0)
+  {
+    if(N%size != 0)
     {
-      if(N%size != 0)
-      {
-        printf("Nombre de rang MPI invalide N doit etre divisible par le nombre de rang");
-        exit(0);
-      }
-      gettimeofday(&tv, NULL);
-      useconde_start = (tv.tv_sec * (uint64_t)1000) + (tv.tv_usec / 1000);
+      printf("Nombre de rang MPI invalide N doit etre divisible par le nombre de rang\n");
     }
-    davidson(A,N,wr,vr,nb_eig);
-    if (rang == 0)
-    {
-      gettimeofday(&tv, NULL);
-      useconde_stop = (tv.tv_sec * (uint64_t)1000) + (tv.tv_usec / 1000);
-      time_elapsed += (useconde_stop - useconde_start);
+    gettimeofday(&tv, NULL);
+    useconde_start = (tv.tv_sec * (uint64_t)1000) + (tv.tv_usec / 1000);
+  }
+  tmp = davidson(A,N,wr,vr,nb_eig,ritz);
+  while (!convergence)
+  {
+    tmp = davidson(A,N,wr,vr,nb_eig,tmp);// on redemare jusqu'a la convergence
+  }
+  if (rang == 0)
+  {
+    gettimeofday(&tv, NULL);
+    useconde_stop = (tv.tv_sec * (uint64_t)1000) + (tv.tv_usec / 1000);
+    time_elapsed += (useconde_stop - useconde_start);
   //  }
-    printf("Time Elapsed : %ld ms \n",time_elapsed/10);
-    test(A,N,nb_eig);
-    maximum = max(wr, N);
-    printf("EigenValue Davidson:");
-    for(int l=0; l<nb_eig; l++)
-    {
-      printf(" %2f \n", wr[maximum+l]);
-    }
-    printf ("\n");
-    }
+  printf("Time Elapsed : %ld ms \n",time_elapsed/10);
+  maximum = max(wr, N);
+  printf("EigenValue Davidson:");
+  for(int l=0; l<nb_eig; l++)
+  {
+    printf(" %2f \n", wr[maximum+l]);
+  }
+  printf ("\n");
+  }
   MPI_Barrier(MPI_COMM_WORLD);
+  MPI_Finalize();
   return 0;
 }

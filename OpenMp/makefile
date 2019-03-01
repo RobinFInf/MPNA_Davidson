@@ -4,6 +4,6 @@ davidson: davidson.o
 davidson.o: davidson_OpenMP.c
 	gcc -fopenmp -o davidson.o -c davidson_OpenMP.c -Wall -llapacke -lm -g
 run :
-	OMP_NUM_THREADS=4 ./davidson.exe
+	OMP_NUM_THREADS=4 ./davidson.exe 50
 clean :
 	rm *.o *.exe
